@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Credential {
+  id        String   @id @default(cuid())
+  service   String
+  username  String?
+  password  String?
+  url       String?
+  category  String?  // e.g., "Tools", "Courses", "Social Media"
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FinancialRecord {
+  id        String   @id @default(cuid())
+  type      String   // "INCOME" or "EXPENSE"
+  amount    Float
+  category  String?
+  description String
+  status    String   // "PAID", "PENDING", "OVERDUE"
+  dueDate   DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  status      String   // "TODO", "IN_PROGRESS", "DONE"
+  priority    String?  // "LOW", "MEDIUM", "HIGH"
+  dueDate     DateTime?
+  assignee    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Product {
+  id        String   @id @default(cuid())
+  name      String
+  plataform String?  // e.g., "Hotmart", "Clickbank"
+  status    String   // "MINING", "VALIDATING", "SCALING", "PAUSED"
+  driveLink String?
+  miroLink  String?
+  notionLink String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Integration {
+  id        String   @id @default(cuid())
+  platform  String   // "FACEBOOK", "GOOGLE"
+  apiKey    String?
+  apiSecret String?
+  accountId String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

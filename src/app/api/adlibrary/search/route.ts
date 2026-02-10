@@ -13,13 +13,15 @@ export async function GET(request: Request) {
 
         const { searchParams } = new URL(request.url);
         const searchTerms = searchParams.get("q") || "";
-        const country = searchParams.get("country") || "BR";
+        const country = searchParams.get("country") || "BR,US"; // Default: both
         const mediaType = searchParams.get("media_type") || "";
         const activeStatus = searchParams.get("active_status") || "ACTIVE";
         const platform = searchParams.get("platform") || "";
         const language = searchParams.get("language") || "";
         const after = searchParams.get("after") || "";
-        const limit = searchParams.get("limit") || "25";
+        const limit = searchParams.get("limit") || "100"; // Higher limit for better filtering
+        const minDaysActive = parseInt(searchParams.get("min_days_active") || "0");
+        const minAdsCount = parseInt(searchParams.get("min_ads_count") || "0");
 
         if (!searchTerms) {
             return NextResponse.json({ error: "Informe um termo de busca.", connected: true }, { status: 200 });
@@ -27,7 +29,10 @@ export async function GET(request: Request) {
 
         const accessToken = integration.apiKey;
 
-        // Build the API URL — use only fields available for ALL ad types
+        // Build country array for the API
+        const countries = country.split(",").map(c => c.trim()).filter(Boolean);
+        const countriesParam = JSON.stringify(countries); // e.g. ["BR","US"]
+
         const fields = [
             "id", "ad_creative_bodies", "ad_creative_link_captions",
             "ad_creative_link_titles", "ad_creative_link_descriptions",
@@ -39,7 +44,7 @@ export async function GET(request: Request) {
         const params = new URLSearchParams({
             access_token: accessToken,
             search_terms: searchTerms,
-            ad_reached_countries: `["${country}"]`,
+            ad_reached_countries: countriesParam,
             ad_active_status: activeStatus,
             ad_type: "ALL",
             limit,
@@ -52,7 +57,6 @@ export async function GET(request: Request) {
         if (after) params.set("after", after);
 
         const apiUrl = `https://graph.facebook.com/v21.0/ads_archive?${params.toString()}`;
-
         console.log("[Ad Library] Fetching:", apiUrl.replace(accessToken, "TOKEN_HIDDEN"));
 
         const response = await fetch(apiUrl, { cache: "no-store" });
@@ -61,11 +65,9 @@ export async function GET(request: Request) {
         // Handle API errors
         if (data.error) {
             console.error("[Ad Library] API Error:", JSON.stringify(data.error));
-
             const errorMsg = data.error.message || "Erro desconhecido da API da Meta.";
             const errorCode = data.error.code;
 
-            // Provide helpful messages for common errors
             if (errorCode === 190) {
                 return NextResponse.json({
                     error: "Token de acesso expirado ou inválido. Atualize em Configurações.",
@@ -90,45 +92,54 @@ export async function GET(request: Request) {
 
         const ads = data.data || [];
 
-        // Aggregate page ad counts
+        // Aggregate page ad counts across the entire response
         const pageAdCounts: Record<string, number> = {};
         for (const ad of ads) {
             const pid = ad.page_id || ad.page_name || "unknown";
             pageAdCounts[pid] = (pageAdCounts[pid] || 0) + 1;
         }
 
-        // Transform ads
-        const transformedAds = ads.map((ad: any) => {
-            const startDate = ad.ad_delivery_start_time;
-            let daysActive = 0;
-            if (startDate) {
-                const start = new Date(startDate);
-                const now = new Date();
-                daysActive = Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-            }
+        // Transform & filter ads
+        const now = new Date();
+        const transformedAds = ads
+            .map((ad: any) => {
+                const startDate = ad.ad_delivery_start_time;
+                let daysActive = 0;
+                if (startDate) {
+                    const start = new Date(startDate);
+                    daysActive = Math.floor((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+                }
 
-            return {
-                id: ad.id,
-                pageId: ad.page_id || null,
-                pageName: ad.page_name || (ad.bylines ? ad.bylines[0] : "Desconhecido"),
-                adText: ad.ad_creative_bodies?.[0] || "",
-                linkTitle: ad.ad_creative_link_titles?.[0] || "",
-                linkCaption: ad.ad_creative_link_captions?.[0] || "",
-                linkDescription: ad.ad_creative_link_descriptions?.[0] || "",
-                startDate: startDate || null,
-                stopDate: ad.ad_delivery_stop_time || null,
-                daysActive,
-                platforms: ad.publisher_platforms || [],
-                snapshotUrl: ad.ad_snapshot_url || null,
-                languages: ad.languages || [],
-                pageAdCount: pageAdCounts[ad.page_id || ad.page_name || "unknown"] || 1,
-            };
-        });
+                return {
+                    id: ad.id,
+                    pageId: ad.page_id || null,
+                    pageName: ad.page_name || (ad.bylines ? ad.bylines[0] : "Desconhecido"),
+                    adText: ad.ad_creative_bodies?.[0] || "",
+                    linkTitle: ad.ad_creative_link_titles?.[0] || "",
+                    linkCaption: ad.ad_creative_link_captions?.[0] || "",
+                    linkDescription: ad.ad_creative_link_descriptions?.[0] || "",
+                    startDate: startDate || null,
+                    stopDate: ad.ad_delivery_stop_time || null,
+                    daysActive,
+                    platforms: ad.publisher_platforms || [],
+                    snapshotUrl: ad.ad_snapshot_url || null,
+                    languages: ad.languages || [],
+                    pageAdCount: pageAdCounts[ad.page_id || ad.page_name || "unknown"] || 1,
+                };
+            })
+            .filter((ad: any) => {
+                // Apply minimum days active filter
+                if (minDaysActive > 0 && ad.daysActive < minDaysActive) return false;
+                // Apply minimum ads per page filter
+                if (minAdsCount > 0 && ad.pageAdCount < minAdsCount) return false;
+                return true;
+            });
 
         return NextResponse.json({
             connected: true,
             ads: transformedAds,
             total: transformedAds.length,
+            totalBeforeFilter: ads.length,
             paging: data.paging || null,
         });
     } catch (error: any) {

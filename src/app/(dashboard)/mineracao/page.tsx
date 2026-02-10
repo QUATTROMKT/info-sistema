@@ -24,11 +24,9 @@ type SavedAd = {
 };
 
 const COUNTRIES = [
-    { value: "BR", label: "🇧🇷 Brasil" }, { value: "US", label: "🇺🇸 EUA" },
-    { value: "PT", label: "🇵🇹 Portugal" }, { value: "ES", label: "🇪🇸 Espanha" },
-    { value: "MX", label: "🇲🇽 México" }, { value: "GB", label: "🇬🇧 Reino Unido" },
-    { value: "DE", label: "🇩🇪 Alemanha" }, { value: "FR", label: "🇫🇷 França" },
-    { value: "IT", label: "🇮🇹 Itália" }, { value: "CO", label: "🇨🇴 Colômbia" },
+    { value: "BR,US", label: "🌎 Brasil + EUA" },
+    { value: "BR", label: "🇧🇷 Somente Brasil" },
+    { value: "US", label: "🇺🇸 Somente EUA" },
 ];
 
 const MEDIA_TYPES = [
@@ -40,6 +38,12 @@ const AD_COUNT_FILTERS = [
     { value: 0, label: "Todos" }, { value: 5, label: "5+" },
     { value: 10, label: "10+" }, { value: 25, label: "25+" },
     { value: 50, label: "50+" },
+];
+
+const DAYS_ACTIVE_FILTERS = [
+    { value: 0, label: "Todos" }, { value: 3, label: "3+ dias" },
+    { value: 7, label: "7+ dias" }, { value: 14, label: "14+ dias" },
+    { value: 30, label: "30+ dias" },
 ];
 
 export default function MineracaoPage() {
@@ -54,10 +58,11 @@ export default function MineracaoPage() {
 
     // Filters
     const [showFilters, setShowFilters] = useState(false);
-    const [country, setCountry] = useState("BR");
+    const [country, setCountry] = useState("BR,US");
     const [mediaType, setMediaType] = useState("");
     const [platform, setPlatform] = useState("");
-    const [minAdCount, setMinAdCount] = useState(0);
+    const [minAdCount, setMinAdCount] = useState(10);
+    const [minDaysActive, setMinDaysActive] = useState(7);
     const [afterCursor, setAfterCursor] = useState<string | null>(null);
     const [pagingInfo, setPagingInfo] = useState<any>(null);
 
@@ -93,9 +98,12 @@ export default function MineracaoPage() {
         try {
             const params = new URLSearchParams({
                 q: searchTerm, country, active_status: "ACTIVE",
+                limit: "100",
             });
             if (mediaType) params.set("media_type", mediaType);
             if (platform) params.set("platform", platform);
+            if (minDaysActive > 0) params.set("min_days_active", String(minDaysActive));
+            if (minAdCount > 0) params.set("min_ads_count", String(minAdCount));
             if (cursor) params.set("after", cursor);
 
             const res = await fetch(`/api/adlibrary/search?${params.toString()}`);
@@ -169,7 +177,8 @@ export default function MineracaoPage() {
         finally { setAiLoading(null); }
     };
 
-    const filteredAds = ads.filter(a => a.pageAdCount >= minAdCount);
+    // Backend already filters by minDaysActive and minAdCount, but keep client-side as safety net
+    const filteredAds = ads.filter(a => a.pageAdCount >= minAdCount && a.daysActive >= minDaysActive);
 
     return (
         <div className="space-y-5">
@@ -225,7 +234,7 @@ export default function MineracaoPage() {
                     {/* Filters Panel */}
                     {showFilters && (
                         <div className="card p-4 space-y-4 border-dashed">
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                                 <div>
                                     <label className="block text-xs font-medium text-muted-foreground mb-1.5">País</label>
                                     <select value={country} onChange={e => setCountry(e.target.value)}
@@ -247,6 +256,13 @@ export default function MineracaoPage() {
                                         <option value="">Todas</option>
                                         <option value="FACEBOOK">Facebook</option>
                                         <option value="INSTAGRAM">Instagram</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-muted-foreground mb-1.5">Mín. Dias Ativo</label>
+                                    <select value={minDaysActive} onChange={e => setMinDaysActive(Number(e.target.value))}
+                                        className="w-full bg-background border border-border rounded-md px-3 py-1.5 text-sm focus:border-primary outline-none">
+                                        {DAYS_ACTIVE_FILTERS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                                     </select>
                                 </div>
                                 <div>

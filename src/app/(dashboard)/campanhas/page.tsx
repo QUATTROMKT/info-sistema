@@ -3,10 +3,12 @@
 import { useState, useEffect, useCallback } from "react";
 import {
     RefreshCw, TrendingUp, DollarSign, Target, Loader2, Settings,
-    AlertCircle, ChevronDown, Filter, Pencil, Check, X, ExternalLink
+    AlertCircle, ChevronDown, Filter, Pencil, Check, X, ExternalLink, Building2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+
+type AdAccountOption = { id: string; name: string; accountId: string };
 
 type Insights = {
     spend: string; impressions: number; clicks: number;
@@ -68,14 +70,25 @@ export default function CampanhasPage() {
     const [updatingId, setUpdatingId] = useState<string | null>(null);
     const [editingBudget, setEditingBudget] = useState<string | null>(null);
     const [budgetValue, setBudgetValue] = useState("");
+    const [adAccounts, setAdAccounts] = useState<AdAccountOption[]>([]);
+    const [selectedAccount, setSelectedAccount] = useState("all");
+
+    // Fetch ad accounts on mount
+    useEffect(() => {
+        fetch("/api/meta/accounts").then(r => r.json()).then(d => {
+            if (d.accounts?.length) setAdAccounts(d.accounts);
+        }).catch(() => { });
+    }, []);
+
+    const acctParam = selectedAccount ? `&account_id=${selectedAccount}` : "";
 
     const fetchData = useCallback(async () => {
         setLoading(true);
         setError(null);
         try {
             const [campaignsRes, insightsRes] = await Promise.all([
-                fetch(`/api/meta/campaigns?date_preset=${datePreset}`),
-                fetch(`/api/meta/insights?date_preset=${datePreset}`),
+                fetch(`/api/meta/campaigns?date_preset=${datePreset}${acctParam}`),
+                fetch(`/api/meta/insights?date_preset=${datePreset}${acctParam}`),
             ]);
 
             const campaignsData = await campaignsRes.json();
@@ -95,29 +108,29 @@ export default function CampanhasPage() {
             if (insightsData.insights) setInsights(insightsData.insights);
         } catch { setError("Erro ao conectar com a API."); }
         finally { setLoading(false); }
-    }, [datePreset]);
+    }, [datePreset, acctParam]);
 
     const fetchAdSets = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch(`/api/meta/adsets?date_preset=${datePreset}`);
+            const res = await fetch(`/api/meta/adsets?date_preset=${datePreset}${acctParam}`);
             const data = await res.json();
             if (data.adSets) setAdSets(data.adSets);
             if (data.error) setError(data.error);
         } catch { setError("Erro ao buscar conjuntos."); }
         finally { setLoading(false); }
-    }, [datePreset]);
+    }, [datePreset, acctParam]);
 
     const fetchAds = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await fetch(`/api/meta/ads?date_preset=${datePreset}`);
+            const res = await fetch(`/api/meta/ads?date_preset=${datePreset}${acctParam}`);
             const data = await res.json();
             if (data.ads) setAds(data.ads);
             if (data.error) setError(data.error);
         } catch { setError("Erro ao buscar anúncios."); }
         finally { setLoading(false); }
-    }, [datePreset]);
+    }, [datePreset, acctParam]);
 
     useEffect(() => {
         if (activeTab === "campaigns") fetchData();
@@ -261,6 +274,22 @@ export default function CampanhasPage() {
             <div className="flex items-center gap-3 flex-wrap">
                 <input type="text" placeholder="Buscar por nome..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
                     className="bg-background border border-border rounded-md px-3 py-1.5 text-sm w-64 focus:border-primary outline-none" />
+
+                {/* Account Selector */}
+                {adAccounts.length > 1 && (
+                    <div className="relative">
+                        <Building2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                        <select value={selectedAccount} onChange={e => setSelectedAccount(e.target.value)}
+                            className="bg-background border border-border rounded-md pl-8 pr-6 py-1.5 text-xs appearance-none focus:border-primary outline-none cursor-pointer">
+                            <option value="all">Todas as contas</option>
+                            {adAccounts.map(acc => (
+                                <option key={acc.id} value={acc.accountId}>{acc.name}</option>
+                            ))}
+                        </select>
+                        <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                    </div>
+                )}
+
                 <div className="flex gap-1 bg-secondary rounded-lg p-0.5">
                     {STATUS_FILTERS.map(f => (
                         <button key={f.value} onClick={() => setStatusFilter(f.value)}

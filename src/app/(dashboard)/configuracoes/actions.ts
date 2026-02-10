@@ -30,7 +30,7 @@ export async function saveIntegration(formData: FormData) {
             where: { id: existing.id },
             data: {
                 apiKey,
-                accountId,
+                accountId: accountId || existing.accountId,
                 isActive: true,
             },
         });
@@ -39,7 +39,7 @@ export async function saveIntegration(formData: FormData) {
             data: {
                 platform,
                 apiKey,
-                accountId,
+                accountId: accountId || null,
                 isActive: true,
             },
         });
@@ -62,4 +62,52 @@ export async function deleteIntegration(id: string) {
         where: { id },
     });
     revalidatePath("/configuracoes");
+}
+
+// --- Ad Account Management ---
+
+export async function getAdAccounts() {
+    const integration = await prisma.integration.findFirst({
+        where: { platform: "FACEBOOK", isActive: true },
+    });
+    if (!integration) return [];
+
+    return await prisma.adAccount.findMany({
+        where: { integrationId: integration.id },
+        orderBy: { createdAt: "asc" },
+    });
+}
+
+export async function addAdAccount(formData: FormData) {
+    const name = formData.get("name") as string;
+    const accountId = formData.get("accountId") as string;
+
+    if (!name || !accountId) return;
+
+    const integration = await prisma.integration.findFirst({
+        where: { platform: "FACEBOOK", isActive: true },
+    });
+    if (!integration) return;
+
+    // Ensure act_ prefix
+    const normalizedId = accountId.startsWith("act_") ? accountId : `act_${accountId}`;
+
+    await prisma.adAccount.create({
+        data: {
+            name,
+            accountId: normalizedId,
+            integrationId: integration.id,
+        },
+    });
+
+    revalidatePath("/configuracoes");
+    revalidatePath("/campanhas");
+}
+
+export async function removeAdAccount(id: string) {
+    await prisma.adAccount.delete({
+        where: { id },
+    });
+    revalidatePath("/configuracoes");
+    revalidatePath("/campanhas");
 }

@@ -7,7 +7,7 @@ export async function GET(request: Request) {
             where: { platform: "FACEBOOK", isActive: true },
         });
 
-        if (!integration || !integration.apiKey || !integration.accountId) {
+        if (!integration || !integration.apiKey) {
             return NextResponse.json(
                 { error: "Meta Ads não configurado.", connected: false },
                 { status: 200 }
@@ -16,49 +16,76 @@ export async function GET(request: Request) {
 
         const { searchParams } = new URL(request.url);
         const datePreset = searchParams.get("date_preset") || "last_30d";
-
+        const selectedAccountId = searchParams.get("account_id") || "";
         const accessToken = integration.apiKey;
-        const adAccountId = integration.accountId;
 
-        // Fetch account-level insights (aggregated KPIs)
-        const insightsUrl = `https://graph.facebook.com/v21.0/${adAccountId}/insights?fields=spend,impressions,clicks,cpc,cpm,ctr,actions,action_values,cost_per_action_type&date_preset=${datePreset}&access_token=${accessToken}`;
+        // Determine which accounts to fetch
+        let accountIds: string[] = [];
 
-        const response = await fetch(insightsUrl, { cache: "no-store" });
-
-        if (!response.ok) {
-            const error = await response.json();
-            return NextResponse.json(
-                { error: error.error?.message || "Erro ao buscar insights.", connected: true },
-                { status: 200 }
-            );
+        if (selectedAccountId && selectedAccountId !== "all") {
+            accountIds = [selectedAccountId];
+        } else {
+            const adAccounts = await prisma.adAccount.findMany({
+                where: { integrationId: integration.id, isActive: true },
+            });
+            if (adAccounts.length > 0) {
+                accountIds = adAccounts.map(a => a.accountId);
+            } else if (integration.accountId) {
+                accountIds = [integration.accountId];
+            } else {
+                return NextResponse.json({ connected: true, insights: null });
+            }
         }
 
-        const data = await response.json();
-        const insights = data.data?.[0] || {};
+        // Aggregate insights from all accounts
+        let totalSpend = 0, totalRevenue = 0, totalPurchases = 0;
+        let totalImpressions = 0, totalClicks = 0;
+        let totalCpa = 0, cpaCount = 0;
 
-        const spend = parseFloat(insights.spend || "0");
-        const purchaseValue = parseFloat(
-            insights.action_values?.find((a: any) => a.action_type === "purchase")?.value || "0"
-        );
-        const purchases = parseInt(
-            insights.actions?.find((a: any) => a.action_type === "purchase")?.value || "0"
-        );
-        const costPerPurchase = parseFloat(
-            insights.cost_per_action_type?.find((a: any) => a.action_type === "purchase")?.value || "0"
-        );
+        for (const adAccountId of accountIds) {
+            try {
+                const insightsUrl = `https://graph.facebook.com/v21.0/${adAccountId}/insights?fields=spend,impressions,clicks,cpc,cpm,ctr,actions,action_values,cost_per_action_type&date_preset=${datePreset}&access_token=${accessToken}`;
+                const response = await fetch(insightsUrl, { cache: "no-store" });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const insights = data.data?.[0] || {};
+
+                    totalSpend += parseFloat(insights.spend || "0");
+                    totalImpressions += parseInt(insights.impressions || "0");
+                    totalClicks += parseInt(insights.clicks || "0");
+
+                    const pv = parseFloat(
+                        insights.action_values?.find((a: any) => a.action_type === "purchase")?.value || "0"
+                    );
+                    totalRevenue += pv;
+                    totalPurchases += parseInt(
+                        insights.actions?.find((a: any) => a.action_type === "purchase")?.value || "0"
+                    );
+                    const cpp = parseFloat(
+                        insights.cost_per_action_type?.find((a: any) => a.action_type === "purchase")?.value || "0"
+                    );
+                    if (cpp > 0) { totalCpa += cpp; cpaCount++; }
+                }
+            } catch (err: any) {
+                console.error(`[Insights] Error for ${adAccountId}:`, err.message);
+            }
+        }
+
+        const avgCpa = cpaCount > 0 ? totalCpa / cpaCount : 0;
 
         return NextResponse.json({
             connected: true,
             insights: {
-                spend: spend.toFixed(2),
-                revenue: purchaseValue.toFixed(2),
-                roas: spend > 0 ? (purchaseValue / spend).toFixed(2) : "0.00",
-                purchases,
-                cpa: costPerPurchase.toFixed(2),
-                impressions: parseInt(insights.impressions || "0"),
-                clicks: parseInt(insights.clicks || "0"),
-                ctr: parseFloat(insights.ctr || "0").toFixed(2),
-                cpc: parseFloat(insights.cpc || "0").toFixed(2),
+                spend: totalSpend.toFixed(2),
+                revenue: totalRevenue.toFixed(2),
+                roas: totalSpend > 0 ? (totalRevenue / totalSpend).toFixed(2) : "0.00",
+                purchases: totalPurchases,
+                cpa: avgCpa.toFixed(2),
+                impressions: totalImpressions,
+                clicks: totalClicks,
+                ctr: totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : "0.00",
+                cpc: totalClicks > 0 ? (totalSpend / totalClicks).toFixed(2) : "0.00",
             },
         });
     } catch (error: any) {

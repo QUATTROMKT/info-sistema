@@ -3,12 +3,19 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
     try {
-        // Check for OpenAI API key in integrations or env
-        const openaiKey = process.env.OPENAI_API_KEY;
+        // Check for OpenAI API key: database first, then env
+        let openaiKey = process.env.OPENAI_API_KEY;
+
+        const openaiIntegration = await prisma.integration.findFirst({
+            where: { platform: "OPENAI", isActive: true },
+        });
+        if (openaiIntegration?.apiKey) {
+            openaiKey = openaiIntegration.apiKey;
+        }
 
         if (!openaiKey) {
             return NextResponse.json({
-                error: "Chave da OpenAI não configurada. Adicione OPENAI_API_KEY nas variáveis de ambiente.",
+                error: "Chave da OpenAI não configurada. Vá em Configurações e adicione sua API Key da OpenAI.",
             }, { status: 400 });
         }
 

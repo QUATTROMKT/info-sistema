@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Save, Trash, ToggleLeft, ToggleRight, Shield, ExternalLink, Eye, EyeOff } from "lucide-react";
-import { saveIntegration, toggleIntegration, deleteIntegration } from "./actions";
+import { Save, Trash, ToggleLeft, ToggleRight, Shield, ExternalLink, Eye, EyeOff, Plus, Sparkles, X } from "lucide-react";
+import { saveIntegration, toggleIntegration, deleteIntegration, addAdAccount, removeAdAccount } from "./actions";
 import { cn } from "@/lib/utils";
 
 type Integration = {
@@ -11,6 +11,13 @@ type Integration = {
     apiKey: string | null;
     apiSecret: string | null;
     accountId: string | null;
+    isActive: boolean;
+};
+
+type AdAccountType = {
+    id: string;
+    name: string;
+    accountId: string;
     isActive: boolean;
 };
 
@@ -23,9 +30,19 @@ const PLATFORMS = [
         bgColor: "bg-blue-500/10",
         fields: [
             { name: "apiKey", label: "Access Token", placeholder: "EAAxxxxxxx...", type: "password" },
-            { name: "accountId", label: "Ad Account ID", placeholder: "act_123456789", type: "text" },
         ],
         helpUrl: "https://developers.facebook.com/tools/explorer/",
+    },
+    {
+        id: "OPENAI",
+        name: "OpenAI (IA)",
+        description: "Habilite geração de copy e análise de anúncios com inteligência artificial.",
+        color: "text-purple-500",
+        bgColor: "bg-purple-500/10",
+        fields: [
+            { name: "apiKey", label: "API Key", placeholder: "sk-...", type: "password" },
+        ],
+        helpUrl: "https://platform.openai.com/api-keys",
     },
     {
         id: "GOOGLE",
@@ -41,9 +58,15 @@ const PLATFORMS = [
     },
 ];
 
-export function SettingsPanel({ initialIntegrations }: { initialIntegrations: Integration[] }) {
+export function SettingsPanel({ initialIntegrations, initialAdAccounts }: {
+    initialIntegrations: Integration[];
+    initialAdAccounts: AdAccountType[];
+}) {
     const [visibleTokens, setVisibleTokens] = useState<Record<string, boolean>>({});
     const [savingPlatform, setSavingPlatform] = useState<string | null>(null);
+    const [adAccounts, setAdAccounts] = useState<AdAccountType[]>(initialAdAccounts);
+    const [showAddAccount, setShowAddAccount] = useState(false);
+    const [addingAccount, setAddingAccount] = useState(false);
 
     const toggleTokenVisibility = (platformId: string) => {
         setVisibleTokens(prev => ({ ...prev, [platformId]: !prev[platformId] }));
@@ -51,6 +74,11 @@ export function SettingsPanel({ initialIntegrations }: { initialIntegrations: In
 
     const getIntegration = (platform: string) =>
         initialIntegrations.find(i => i.platform === platform);
+
+    const handleRemoveAccount = async (id: string) => {
+        await removeAdAccount(id);
+        setAdAccounts(prev => prev.filter(a => a.id !== id));
+    };
 
     return (
         <div className="space-y-8">
@@ -64,7 +92,10 @@ export function SettingsPanel({ initialIntegrations }: { initialIntegrations: In
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", platform.bgColor)}>
-                                    <Shield className={cn("h-5 w-5", platform.color)} />
+                                    {platform.id === "OPENAI"
+                                        ? <Sparkles className={cn("h-5 w-5", platform.color)} />
+                                        : <Shield className={cn("h-5 w-5", platform.color)} />
+                                    }
                                 </div>
                                 <div>
                                     <h3 className="font-semibold text-lg">{platform.name}</h3>
@@ -164,6 +195,81 @@ export function SettingsPanel({ initialIntegrations }: { initialIntegrations: In
                                 </button>
                             </div>
                         </form>
+
+                        {/* Ad Accounts Section — only for FACEBOOK */}
+                        {platform.id === "FACEBOOK" && integration?.isActive && (
+                            <div className="border-t border-border pt-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h4 className="text-sm font-semibold">Contas de Anúncios</h4>
+                                        <p className="text-xs text-muted-foreground">Gerencie múltiplas contas para ver campanhas.</p>
+                                    </div>
+                                    <button
+                                        onClick={() => setShowAddAccount(!showAddAccount)}
+                                        className="btn text-xs px-3 py-1.5 border border-border bg-secondary text-foreground hover:bg-secondary/80"
+                                    >
+                                        <Plus className="h-3.5 w-3.5 mr-1" />Adicionar Conta
+                                    </button>
+                                </div>
+
+                                {/* Add Account Form */}
+                                {showAddAccount && (
+                                    <form
+                                        action={async (formData) => {
+                                            setAddingAccount(true);
+                                            await addAdAccount(formData);
+                                            setAddingAccount(false);
+                                            setShowAddAccount(false);
+                                            // Refresh page to get new accounts
+                                            window.location.reload();
+                                        }}
+                                        className="flex items-end gap-3 bg-secondary/30 rounded-lg p-3"
+                                    >
+                                        <div className="flex-1 space-y-1">
+                                            <label className="text-xs font-medium text-muted-foreground">Apelido</label>
+                                            <input name="name" required placeholder="Ex: Conta Principal"
+                                                className="w-full bg-background border border-border rounded-md px-3 py-1.5 text-sm focus:border-primary outline-none" />
+                                        </div>
+                                        <div className="flex-1 space-y-1">
+                                            <label className="text-xs font-medium text-muted-foreground">Account ID</label>
+                                            <input name="accountId" required placeholder="act_123456789"
+                                                className="w-full bg-background border border-border rounded-md px-3 py-1.5 text-sm focus:border-primary outline-none" />
+                                        </div>
+                                        <button type="submit" disabled={addingAccount}
+                                            className="btn btn-primary text-xs px-4 py-1.5 shrink-0">
+                                            {addingAccount ? "..." : "Salvar"}
+                                        </button>
+                                        <button type="button" onClick={() => setShowAddAccount(false)}
+                                            className="p-1.5 text-muted-foreground hover:text-foreground shrink-0">
+                                            <X className="h-4 w-4" />
+                                        </button>
+                                    </form>
+                                )}
+
+                                {/* Account List */}
+                                {adAccounts.length > 0 ? (
+                                    <div className="space-y-2">
+                                        {adAccounts.map(acc => (
+                                            <div key={acc.id} className="flex items-center justify-between bg-secondary/30 rounded-lg px-4 py-2.5">
+                                                <div>
+                                                    <span className="text-sm font-medium">{acc.name}</span>
+                                                    <span className="text-xs text-muted-foreground ml-2">{acc.accountId}</span>
+                                                </div>
+                                                <button onClick={() => handleRemoveAccount(acc.id)}
+                                                    className="p-1 rounded-md hover:bg-destructive/20 text-muted-foreground hover:text-destructive transition-colors"
+                                                    title="Remover">
+                                                    <Trash className="h-3.5 w-3.5" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-muted-foreground italic">
+                                        Nenhuma conta adicionada. {integration?.accountId && `Usando conta padrão: ${integration.accountId}`}
+                                    </p>
+                                )}
+                            </div>
+                        )}
                     </div>
                 );
             })}
@@ -176,8 +282,8 @@ export function SettingsPanel({ initialIntegrations }: { initialIntegrations: In
                     <li>Vá em <strong className="text-foreground">Tools → Graph API Explorer</strong></li>
                     <li>Selecione seu App e adicione as permissões: <code className="bg-secondary px-1 rounded text-xs">ads_read</code></li>
                     <li>Gere um <strong className="text-foreground">User Token</strong> e estenda para Long-Lived (60 dias)</li>
-                    <li>Copie o <strong className="text-foreground">Access Token</strong> e o <strong className="text-foreground">Ad Account ID</strong> (formato: act_123...)</li>
-                    <li>Cole os valores acima e clique em <strong className="text-foreground">Salvar</strong></li>
+                    <li>Copie o <strong className="text-foreground">Access Token</strong> e salve acima</li>
+                    <li>Adicione suas contas de anúncios na seção <strong className="text-foreground">Contas de Anúncios</strong></li>
                 </ol>
             </div>
         </div>

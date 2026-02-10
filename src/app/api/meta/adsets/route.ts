@@ -7,77 +7,110 @@ export async function GET(request: Request) {
             where: { platform: "FACEBOOK", isActive: true },
         });
 
-        if (!integration || !integration.apiKey || !integration.accountId) {
+        if (!integration || !integration.apiKey) {
             return NextResponse.json({ error: "Meta Ads não configurado.", connected: false }, { status: 200 });
         }
 
         const { searchParams } = new URL(request.url);
         const datePreset = searchParams.get("date_preset") || "last_30d";
         const campaignId = searchParams.get("campaign_id");
-
+        const selectedAccountId = searchParams.get("account_id") || "";
         const accessToken = integration.apiKey;
-        const adAccountId = integration.accountId;
 
-        // If campaign_id is provided, fetch ad sets for that campaign
-        const parentId = campaignId || adAccountId;
-        const endpoint = campaignId
-            ? `https://graph.facebook.com/v21.0/${campaignId}/adsets`
-            : `https://graph.facebook.com/v21.0/${adAccountId}/adsets`;
+        // Determine which accounts to fetch
+        let accountIds: string[] = [];
 
-        const adSetsUrl = `${endpoint}?fields=id,name,status,daily_budget,lifetime_budget,campaign_id,targeting,optimization_goal,bid_strategy&access_token=${accessToken}&limit=100`;
-
-        const response = await fetch(adSetsUrl, { cache: "no-store" });
-
-        if (!response.ok) {
-            const error = await response.json();
-            return NextResponse.json({ error: error.error?.message || "Erro ao buscar conjuntos." }, { status: 200 });
+        if (campaignId) {
+            // When filtering by campaign, we don't need account_id
+            accountIds = ["__campaign__"];
+        } else if (selectedAccountId && selectedAccountId !== "all") {
+            accountIds = [selectedAccountId];
+        } else {
+            const adAccounts = await prisma.adAccount.findMany({
+                where: { integrationId: integration.id, isActive: true },
+            });
+            if (adAccounts.length > 0) {
+                accountIds = adAccounts.map(a => a.accountId);
+            } else if (integration.accountId) {
+                accountIds = [integration.accountId];
+            } else {
+                return NextResponse.json({ connected: true, adSets: [], total: 0 });
+            }
         }
 
-        const adSetsData = await response.json();
-        const adSets = adSetsData.data || [];
+        const allAdSets: any[] = [];
 
-        // Fetch insights for each ad set
-        const adSetsWithInsights = await Promise.all(
-            adSets.map(async (adSet: any) => {
-                try {
-                    const insightsUrl = `https://graph.facebook.com/v21.0/${adSet.id}/insights?fields=spend,impressions,clicks,cpc,ctr,actions,action_values,cost_per_action_type&date_preset=${datePreset}&access_token=${accessToken}`;
-                    const insightsRes = await fetch(insightsUrl, { cache: "no-store" });
-
-                    if (insightsRes.ok) {
-                        const insightsData = await insightsRes.json();
-                        const insights = insightsData.data?.[0] || {};
-
-                        const purchases = insights.actions?.find((a: any) => a.action_type === "purchase")?.value || 0;
-                        const purchaseValue = insights.action_values?.find((a: any) => a.action_type === "purchase")?.value || 0;
-                        const costPerPurchase = insights.cost_per_action_type?.find((a: any) => a.action_type === "purchase")?.value || 0;
-                        const spend = parseFloat(insights.spend || "0");
-                        const revenue = parseFloat(purchaseValue);
-
-                        return {
-                            ...adSet,
-                            daily_budget: adSet.daily_budget ? parseInt(adSet.daily_budget) / 100 : null,
-                            lifetime_budget: adSet.lifetime_budget ? parseInt(adSet.lifetime_budget) / 100 : null,
-                            insights: {
-                                spend: spend.toFixed(2),
-                                impressions: parseInt(insights.impressions || "0"),
-                                clicks: parseInt(insights.clicks || "0"),
-                                cpc: parseFloat(insights.cpc || "0").toFixed(2),
-                                ctr: parseFloat(insights.ctr || "0").toFixed(2),
-                                purchases: parseInt(purchases),
-                                revenue: revenue.toFixed(2),
-                                roas: spend > 0 ? (revenue / spend).toFixed(2) : "0.00",
-                                cpa: parseFloat(costPerPurchase).toFixed(2),
-                            },
-                        };
-                    }
-                    return { ...adSet, insights: null };
-                } catch {
-                    return { ...adSet, insights: null };
+        for (const acctId of accountIds) {
+            try {
+                let endpoint: string;
+                if (campaignId) {
+                    endpoint = `https://graph.facebook.com/v21.0/${campaignId}/adsets`;
+                } else {
+                    endpoint = `https://graph.facebook.com/v21.0/${acctId}/adsets`;
                 }
-            })
-        );
 
-        return NextResponse.json({ connected: true, adSets: adSetsWithInsights, total: adSets.length });
+                const adSetsUrl = `${endpoint}?fields=id,name,status,daily_budget,lifetime_budget,campaign_id,targeting,optimization_goal,bid_strategy&access_token=${accessToken}&limit=100`;
+                const response = await fetch(adSetsUrl, { cache: "no-store" });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    console.error(`[AdSets] Error for ${acctId}:`, error.error?.message);
+                    continue;
+                }
+
+                const adSetsData = await response.json();
+                const adSets = adSetsData.data || [];
+
+                const adSetsWithInsights = await Promise.all(
+                    adSets.map(async (adSet: any) => {
+                        try {
+                            const insightsUrl = `https://graph.facebook.com/v21.0/${adSet.id}/insights?fields=spend,impressions,clicks,cpc,ctr,actions,action_values,cost_per_action_type&date_preset=${datePreset}&access_token=${accessToken}`;
+                            const insightsRes = await fetch(insightsUrl, { cache: "no-store" });
+
+                            if (insightsRes.ok) {
+                                const insightsData = await insightsRes.json();
+                                const insights = insightsData.data?.[0] || {};
+
+                                const purchases = insights.actions?.find((a: any) => a.action_type === "purchase")?.value || 0;
+                                const purchaseValue = insights.action_values?.find((a: any) => a.action_type === "purchase")?.value || 0;
+                                const costPerPurchase = insights.cost_per_action_type?.find((a: any) => a.action_type === "purchase")?.value || 0;
+                                const spend = parseFloat(insights.spend || "0");
+                                const revenue = parseFloat(purchaseValue);
+
+                                return {
+                                    ...adSet,
+                                    daily_budget: adSet.daily_budget ? parseInt(adSet.daily_budget) / 100 : null,
+                                    lifetime_budget: adSet.lifetime_budget ? parseInt(adSet.lifetime_budget) / 100 : null,
+                                    insights: {
+                                        spend: spend.toFixed(2),
+                                        impressions: parseInt(insights.impressions || "0"),
+                                        clicks: parseInt(insights.clicks || "0"),
+                                        cpc: parseFloat(insights.cpc || "0").toFixed(2),
+                                        ctr: parseFloat(insights.ctr || "0").toFixed(2),
+                                        purchases: parseInt(purchases),
+                                        revenue: revenue.toFixed(2),
+                                        roas: spend > 0 ? (revenue / spend).toFixed(2) : "0.00",
+                                        cpa: parseFloat(costPerPurchase).toFixed(2),
+                                    },
+                                };
+                            }
+                            return { ...adSet, insights: null };
+                        } catch {
+                            return { ...adSet, insights: null };
+                        }
+                    })
+                );
+
+                allAdSets.push(...adSetsWithInsights);
+            } catch (err: any) {
+                console.error(`[AdSets] Fetch error for ${acctId}:`, err.message);
+            }
+
+            // If filtering by campaign, only one iteration needed
+            if (campaignId) break;
+        }
+
+        return NextResponse.json({ connected: true, adSets: allAdSets, total: allAdSets.length });
     } catch (error: any) {
         console.error("Ad Sets API error:", error);
         return NextResponse.json({ error: "Erro interno.", connected: false }, { status: 500 });

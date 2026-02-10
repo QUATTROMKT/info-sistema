@@ -58,14 +58,26 @@ model Product {
 }
 
 model Integration {
-  id        String   @id @default(cuid())
-  platform  String   // "FACEBOOK", "GOOGLE"
-  apiKey    String?
-  apiSecret String?
-  accountId String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String      @id @default(cuid())
+  platform   String      // "FACEBOOK", "GOOGLE", "OPENAI"
+  apiKey     String?
+  apiSecret  String?
+  accountId  String?
+  isActive   Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  adAccounts AdAccount[]
+}
+
+model AdAccount {
+  id            String      @id @default(cuid())
+  name          String      // Apelido: "Conta Principal", "Conta Escala 2"
+  accountId     String      // act_123456789
+  integrationId String
+  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 }
 
 model User {

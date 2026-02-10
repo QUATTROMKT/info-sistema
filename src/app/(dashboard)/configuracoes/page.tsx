@@ -1,10 +1,13 @@
-import { getIntegrations } from "./actions";
+import { getIntegrations, getAdAccounts } from "./actions";
 import { SettingsPanel } from "./settings-panel";
 
 export const dynamic = "force-dynamic";
 
 export default async function ConfiguracoesPage() {
-    const integrations = await getIntegrations();
+    const [integrations, adAccounts] = await Promise.all([
+        getIntegrations(),
+        getAdAccounts(),
+    ]);
 
     return (
         <div className="space-y-6">
@@ -13,7 +16,7 @@ export default async function ConfiguracoesPage() {
                 <p className="text-muted-foreground">Gerencie integrações e preferências do sistema.</p>
             </div>
 
-            <SettingsPanel initialIntegrations={integrations} />
+            <SettingsPanel initialIntegrations={integrations} initialAdAccounts={adAccounts} />
         </div>
     );
 }

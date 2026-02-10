@@ -14,7 +14,6 @@ type Ad = {
     startDate: string | null; stopDate: string | null; daysActive: number;
     platforms: string[]; snapshotUrl: string | null;
     languages: string[]; pageAdCount: number;
-    impressions: any; spend: any;
 };
 
 type SavedAd = {
@@ -74,7 +73,10 @@ export default function MineracaoPage() {
     const fetchSavedAds = async () => {
         try {
             const res = await fetch("/api/adlibrary/saved");
-            const data = await res.json();
+            if (!res.ok) return;
+            const text = await res.text();
+            if (!text) return;
+            const data = JSON.parse(text);
             if (data.ads) {
                 setSavedAds(data.ads);
                 setSavedIds(new Set(data.ads.map((a: SavedAd) => a.adId)));
@@ -97,6 +99,16 @@ export default function MineracaoPage() {
             if (cursor) params.set("after", cursor);
 
             const res = await fetch(`/api/adlibrary/search?${params.toString()}`);
+
+            // Handle non-JSON responses (e.g. server errors returning HTML)
+            const contentType = res.headers.get("content-type") || "";
+            if (!contentType.includes("application/json")) {
+                const text = await res.text();
+                console.error("Non-JSON response:", text.substring(0, 200));
+                setError("Erro no servidor. Verifique os logs do Vercel para mais detalhes.");
+                return;
+            }
+
             const data = await res.json();
 
             if (data.error) { setError(data.error); return; }
@@ -107,9 +119,13 @@ export default function MineracaoPage() {
                 setAds(data.ads || []);
             }
             setPagingInfo(data.paging);
-        } catch { setError("Erro ao buscar anúncios."); }
+        } catch (err: any) {
+            console.error("Search error:", err);
+            setError(`Erro ao buscar: ${err?.message || "falha na conexão"}`);
+        }
         finally { setLoading(false); }
     };
+
 
     const saveAd = async (ad: Ad) => {
         try {

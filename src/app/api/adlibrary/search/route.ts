@@ -27,14 +27,23 @@ export async function GET(request: Request) {
 
         const accessToken = integration.apiKey;
 
-        // Build the API URL
+        // Build the API URL — use only fields available for ALL ad types
+        const fields = [
+            "id", "ad_creative_bodies", "ad_creative_link_captions",
+            "ad_creative_link_titles", "ad_creative_link_descriptions",
+            "ad_delivery_start_time", "ad_delivery_stop_time",
+            "bylines", "publisher_platforms", "page_id", "page_name",
+            "ad_snapshot_url", "languages"
+        ].join(",");
+
         const params = new URLSearchParams({
             access_token: accessToken,
             search_terms: searchTerms,
             ad_reached_countries: `["${country}"]`,
             ad_active_status: activeStatus,
+            ad_type: "ALL",
             limit,
-            fields: "id,ad_creative_bodies,ad_creative_link_captions,ad_creative_link_titles,ad_creative_link_descriptions,ad_delivery_start_time,ad_delivery_stop_time,bylines,publisher_platforms,page_id,page_name,ad_snapshot_url,estimated_audience_size,languages,impressions,spend",
+            fields,
         });
 
         if (mediaType) params.set("media_type", mediaType);
@@ -43,18 +52,42 @@ export async function GET(request: Request) {
         if (after) params.set("after", after);
 
         const apiUrl = `https://graph.facebook.com/v21.0/ads_archive?${params.toString()}`;
-        const response = await fetch(apiUrl, { cache: "no-store" });
 
-        if (!response.ok) {
-            const errData = await response.json();
-            console.error("Ad Library API error:", errData);
-            return NextResponse.json({
-                error: errData.error?.message || "Erro ao buscar anúncios.",
-                connected: true,
-            }, { status: 200 });
+        console.log("[Ad Library] Fetching:", apiUrl.replace(accessToken, "TOKEN_HIDDEN"));
+
+        const response = await fetch(apiUrl, { cache: "no-store" });
+        const data = await response.json();
+
+        // Handle API errors
+        if (data.error) {
+            console.error("[Ad Library] API Error:", JSON.stringify(data.error));
+
+            const errorMsg = data.error.message || "Erro desconhecido da API da Meta.";
+            const errorCode = data.error.code;
+
+            // Provide helpful messages for common errors
+            if (errorCode === 190) {
+                return NextResponse.json({
+                    error: "Token de acesso expirado ou inválido. Atualize em Configurações.",
+                    connected: true, errorCode,
+                }, { status: 200 });
+            }
+            if (errorCode === 100) {
+                return NextResponse.json({
+                    error: "Permissão insuficiente. A conta Meta precisa ter identidade verificada para usar a Ad Library API.",
+                    connected: true, errorCode,
+                }, { status: 200 });
+            }
+            if (errorMsg.includes("ads_archive")) {
+                return NextResponse.json({
+                    error: "Sem acesso à Ad Library API. Verifique se sua conta Meta tem identidade verificada em developers.facebook.com.",
+                    connected: true, errorCode,
+                }, { status: 200 });
+            }
+
+            return NextResponse.json({ error: errorMsg, connected: true, errorCode }, { status: 200 });
         }
 
-        const data = await response.json();
         const ads = data.data || [];
 
         // Aggregate page ad counts
@@ -77,7 +110,7 @@ export async function GET(request: Request) {
             return {
                 id: ad.id,
                 pageId: ad.page_id || null,
-                pageName: ad.page_name || "Desconhecido",
+                pageName: ad.page_name || (ad.bylines ? ad.bylines[0] : "Desconhecido"),
                 adText: ad.ad_creative_bodies?.[0] || "",
                 linkTitle: ad.ad_creative_link_titles?.[0] || "",
                 linkCaption: ad.ad_creative_link_captions?.[0] || "",
@@ -88,8 +121,6 @@ export async function GET(request: Request) {
                 platforms: ad.publisher_platforms || [],
                 snapshotUrl: ad.ad_snapshot_url || null,
                 languages: ad.languages || [],
-                impressions: ad.impressions || null,
-                spend: ad.spend || null,
                 pageAdCount: pageAdCounts[ad.page_id || ad.page_name || "unknown"] || 1,
             };
         });
@@ -101,7 +132,10 @@ export async function GET(request: Request) {
             paging: data.paging || null,
         });
     } catch (error: any) {
-        console.error("Ad Library search error:", error);
-        return NextResponse.json({ error: "Erro interno ao buscar anúncios.", connected: false }, { status: 500 });
+        console.error("[Ad Library] Catch error:", error?.message || error);
+        return NextResponse.json({
+            error: `Erro: ${error?.message || "Falha na conexão com a API da Meta."}`,
+            connected: true,
+        }, { status: 200 });
     }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
     LayoutDashboard,
     KeyRound,
@@ -9,7 +9,8 @@ import {
     CheckSquare,
     ShoppingBag,
     BarChart3,
-    Settings
+    Settings,
+    LogOut
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,11 +25,17 @@ const navigation = [
 
 export function Sidebar() {
     const pathname = usePathname();
+    const router = useRouter();
+
+    const handleLogout = async () => {
+        await fetch("/api/auth/logout", { method: "POST" });
+        router.push("/login");
+        router.refresh();
+    };
 
     return (
         <div className="sidebar">
             <div className="mb-8 px-2">
-                {/* Using a text logo for now, can be an image later */}
                 <h1 className="text-xl font-bold bg-gradient-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent">
                     SISTEMA INFO
                 </h1>
@@ -56,7 +63,7 @@ export function Sidebar() {
                 })}
             </nav>
 
-            <div className="mt-auto pt-4 border-t border-border">
+            <div className="mt-auto pt-4 border-t border-border space-y-1">
                 <Link
                     href="/configuracoes"
                     className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary hover:text-foreground rounded-md"
@@ -64,7 +71,15 @@ export function Sidebar() {
                     <Settings className="h-5 w-5" />
                     Configurações
                 </Link>
+                <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-rose-500/10 hover:text-rose-500 rounded-md w-full transition-colors"
+                >
+                    <LogOut className="h-5 w-5" />
+                    Sair
+                </button>
             </div>
         </div>
     );
 }
+

@@ -9,6 +9,7 @@ import {
     CheckSquare,
     ShoppingBag,
     BarChart3,
+    Pickaxe,
     Settings,
     LogOut
 } from "lucide-react";
@@ -21,6 +22,7 @@ const navigation = [
     { name: "Tarefas", href: "/tarefas", icon: CheckSquare },
     { name: "Produtos", href: "/produtos", icon: ShoppingBag },
     { name: "Campanhas", href: "/campanhas", icon: BarChart3 },
+    { name: "Mineração", href: "/mineracao", icon: Pickaxe },
 ];
 
 export function Sidebar() {

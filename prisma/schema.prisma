@@ -77,3 +77,21 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model SavedAd {
+  id             String   @id @default(cuid())
+  adId           String   @unique
+  pageName       String
+  pageId         String?
+  adText         String?
+  imageUrl       String?
+  videoUrl       String?
+  platform       String?
+  country        String?
+  startDate      String?
+  landingPageUrl String?
+  category       String?
+  notes          String?
+  aiAnalysis     String?
+  createdAt      DateTime @default(now())
+}
